@@ -10,6 +10,7 @@ import SwiftUI
 @main
 struct LunarSmartApp: App {
     var body: some Scene {
+        // 应用主窗口入口。
         WindowGroup {
             ContentView()
         }

@@ -2,6 +2,7 @@ import SwiftUI
 import EventKit
 import Combine
 
+// 统一维护界面间距、圆角和配色，避免散落的魔法数字。
 private enum DesignTokens {
     enum Spacing {
         static let xs: CGFloat = 8
@@ -34,7 +35,9 @@ private enum DesignTokens {
 }
 
 struct ContentView: View {
+    // 普通事件可选的提醒偏移（单位：分钟，正数表示提前）。
     private static let appleCalendarReminderOffsets: [Int] = [0, 5, 10, 15, 30, 60, 120, 1440, 2880, 10080]
+    // 全天事件对应 Apple Calendar 的提醒选项（含当天和跨天偏移）。
     private static let appleCalendarAllDayReminderOffsets: [Int] = [900, 0, -540, 2340, 10080]
 
     @StateObject private var ruleStore = RuleStore()
@@ -189,6 +192,40 @@ struct ContentView: View {
     private var overviewSection: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             sectionTitle("概览")
+            #if os(iOS)
+            GeometryReader { proxy in
+                let chipSpacing: CGFloat = 8
+                let chipWidth = max(92, floor((proxy.size.width - chipSpacing * 2) / 3))
+                HStack(spacing: chipSpacing) {
+                    overviewChip(
+                        title: "规则类型",
+                        value: activeRuleId == nil ? "新建规则" : "编辑已有规则",
+                        systemImage: "square.and.pencil",
+                        tint: DesignTokens.Colors.brandBlue,
+                        compact: true,
+                        fixedWidth: chipWidth
+                    )
+                    overviewChip(
+                        title: "目标",
+                        value: targetType.label,
+                        systemImage: "target",
+                        tint: .teal,
+                        compact: true,
+                        fixedWidth: chipWidth
+                    )
+                    overviewChip(
+                        title: "重复方式",
+                        value: repeatMode.label,
+                        systemImage: "repeat",
+                        tint: .orange,
+                        compact: true,
+                        fixedWidth: chipWidth
+                    )
+                }
+                .padding(.vertical, DesignTokens.Spacing.xs)
+            }
+            .frame(height: 88)
+            #else
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     overviewChip(
@@ -212,6 +249,7 @@ struct ContentView: View {
                 }
                 .padding(.vertical, DesignTokens.Spacing.xs)
             }
+            #endif
         }
     }
 
@@ -438,6 +476,26 @@ struct ContentView: View {
     }
 
     private var savedRulesTable: some View {
+        #if os(iOS)
+        VStack(spacing: 0) {
+            savedRulesHeaderIOS
+            Divider()
+            ForEach(Array(ruleStore.rules.enumerated()), id: \.element.id) { index, rule in
+                savedRuleRowIOS(rule, isStriped: index.isMultiple(of: 2))
+                if index < ruleStore.rules.count - 1 {
+                    Divider().opacity(0.35)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(lunarCardShape.fill(DesignTokens.Colors.cardBackground))
+        .overlay(
+            lunarCardShape
+                .stroke(DesignTokens.Colors.neutralGray.opacity(0.18), lineWidth: 1)
+        )
+        .clipShape(lunarCardShape)
+        .padding(.vertical, DesignTokens.Spacing.xs)
+        #else
         ScrollView(.horizontal, showsIndicators: false) {
             VStack(spacing: 0) {
                 savedRulesHeader
@@ -458,8 +516,87 @@ struct ContentView: View {
             .clipShape(lunarCardShape)
         }
         .padding(.vertical, DesignTokens.Spacing.xs)
+        #endif
     }
 
+    #if os(iOS)
+    // iOS 使用紧凑三列表格，确保宽度贴合屏幕。
+    private var savedRulesHeaderIOS: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("标题")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("规则信息")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("操作")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 56, alignment: .center)
+        }
+        .padding(.horizontal, DesignTokens.Spacing.sm)
+        .padding(.vertical, DesignTokens.Spacing.sm)
+        .background(DesignTokens.Colors.neutralGray.opacity(0.1))
+    }
+
+    private func savedRuleRowIOS(_ rule: StoredRule, isStriped: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(rule.title)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(rule.type.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(rule.repeatMode.label) · \(rule.spec.displayText)")
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text("关联 \(rule.occurrences.count) 条 · \(formattedUpdatedAt(rule.updatedAt))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .monospacedDigit()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Menu {
+                Button("载入") {
+                    load(rule)
+                }
+                Button("删除", role: .destructive) {
+                    Task {
+                        await deleteRule(rule)
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.title3)
+                    .foregroundStyle(DesignTokens.Colors.brandBlue)
+                    .frame(width: 40, height: 32)
+            }
+            .frame(width: 56, alignment: .center)
+        }
+        .padding(.horizontal, DesignTokens.Spacing.sm)
+        .padding(.vertical, DesignTokens.Spacing.sm)
+        .background(
+            activeRuleId == rule.id
+            ? DesignTokens.Colors.brandBlue.opacity(0.15)
+            : (isStriped ? DesignTokens.Colors.neutralGray.opacity(0.05) : Color.clear)
+        )
+    }
+    #endif
+
+    // 已保存规则表头。
     private var savedRulesHeader: some View {
         HStack(spacing: 10) {
             tableHeaderCell("标题", width: 140, alignment: .leading)
@@ -475,6 +612,7 @@ struct ContentView: View {
         .background(DesignTokens.Colors.neutralGray.opacity(0.1))
     }
 
+    // 表格最小宽度，避免列挤压后可读性下降。
     private var savedRulesTableMinWidth: CGFloat {
         let columnWidths: CGFloat = 140 + 70 + 80 + 100 + 80 + 110 + 110
         let columnSpacings: CGFloat = 10 * 6
@@ -482,6 +620,7 @@ struct ContentView: View {
         return columnWidths + columnSpacings + horizontalPadding
     }
 
+    // 单条规则行，包含载入与删除操作。
     private func savedRuleRow(_ rule: StoredRule, isStriped: Bool) -> some View {
         HStack(spacing: 10) {
             tableDataCell(rule.title, width: 140, alignment: .leading, emphasized: true)
@@ -518,6 +657,7 @@ struct ContentView: View {
         )
     }
 
+    // 表头单元格样式。
     private func tableHeaderCell(_ text: String, width: CGFloat, alignment: Alignment) -> some View {
         Text(text)
             .font(.caption.weight(.semibold))
@@ -526,6 +666,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    // 表体单元格样式（可选强调和等宽数字）。
     private func tableDataCell(
         _ text: String,
         width: CGFloat,
@@ -689,22 +830,27 @@ struct ContentView: View {
         }
     }
 
+    // 去除前后空白后的标题，用于校验与保存。
     private var trimmedTitle: String {
         title.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // 标题非空才允许保存规则。
     private var canSave: Bool {
         !trimmedTitle.isEmpty
     }
 
+    // 年份选择范围：当前年向前 5 年、向后 10 年。
     private var yearOptions: [Int] {
         Array((gregorianYear - 5)...(gregorianYear + 10))
     }
 
+    // 将界面选择组装成农历规则。
     private var spec: LunarSpec {
         LunarSpec(month: lunarMonth, day: lunarDay, isLeapMonth: isLeapMonth)
     }
 
+    // 保证“闰月开关”与重复模式、包含闰月策略保持一致。
     private func enforceLeapSelectionConsistency() {
         if (repeatMode == .monthly || repeatMode == .yearly)
             && !includeLeapMonthsForMonthlyRepeat
@@ -713,6 +859,7 @@ struct ContentView: View {
         }
     }
 
+    // 保证重复结束参数合法，避免次数或结束日期越界。
     private func enforceRepeatEndConsistency() {
         if repeatEndCount < 1 {
             repeatEndCount = 1
@@ -722,6 +869,7 @@ struct ContentView: View {
         }
     }
 
+    // 根据当前表单配置刷新预览日期列表。
     private func refreshPreview() {
         do {
             previewDates = try scheduler.previewOccurrences(
@@ -742,6 +890,7 @@ struct ContentView: View {
     }
 
     @MainActor
+    // 创建或更新系统日历/提醒，并持久化当前规则。
     private func syncRule() async {
         isSaving = true
         defer { isSaving = false }
@@ -811,6 +960,7 @@ struct ContentView: View {
     }
 
     @MainActor
+    // 删除规则及其对应的系统条目。
     private func deleteRule(_ rule: StoredRule) async {
         isSaving = true
         defer { isSaving = false }
@@ -829,6 +979,7 @@ struct ContentView: View {
         }
     }
 
+    // 把已保存规则回填到编辑器，用于二次编辑。
     private func load(_ rule: StoredRule) {
         ruleId = rule.id
         activeRuleId = rule.id
@@ -858,6 +1009,7 @@ struct ContentView: View {
         refreshPreview()
     }
 
+    // 重置当前编辑上下文（新 ruleId、清空编辑态标记）。
     private func resetRuleEditor() {
         ruleId = UUID().uuidString
         activeRuleId = nil
@@ -865,6 +1017,7 @@ struct ContentView: View {
         refreshPreview()
     }
 
+    // 清空所有输入字段并恢复默认值。
     private func clearRuleEditor() {
         focusedField = nil
 
@@ -892,6 +1045,7 @@ struct ContentView: View {
         resetRuleEditor()
     }
 
+    // 将“时:分”拼接到今天日期上，供时间选择器回显。
     private func makeTime(hour: Int, minute: Int) -> Date {
         let cal = Calendar.current
         let now = Date()
@@ -901,6 +1055,7 @@ struct ContentView: View {
         return cal.date(from: components) ?? now
     }
 
+    // 普通事件提醒偏移文案。
     private func reminderLabel(for offset: Int) -> String {
         switch offset {
         case 5:
@@ -932,6 +1087,7 @@ struct ContentView: View {
         }
     }
 
+    // 全天事件提醒偏移文案（对齐 Apple Calendar 语义）。
     private func allDayReminderLabel(for offset: Int) -> String {
         switch offset {
         case 900:
@@ -949,11 +1105,13 @@ struct ContentView: View {
         }
     }
 
+    // 当前所选公历年的首日，用于结束日期下限。
     private var startDateForSelectedYear: Date {
         let calendar = Calendar.current
         return calendar.date(from: DateComponents(year: gregorianYear, month: 1, day: 1)) ?? Date()
     }
 
+    // 公历日期展示格式。
     private func formattedSolar(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -962,28 +1120,45 @@ struct ContentView: View {
         return formatter.string(from: date)
     }
 
+    // 统一 section 标题样式。
     private func sectionTitle(_ text: String) -> some View {
         Text(text)
             .font(.headline.weight(.semibold))
             .foregroundStyle(.primary)
     }
 
-    private func overviewChip(title: String, value: String, systemImage: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+    // 顶部概览卡片。
+    private func overviewChip(
+        title: String,
+        value: String,
+        systemImage: String,
+        tint: Color,
+        compact: Bool = false,
+        fixedWidth: CGFloat? = nil
+    ) -> some View {
+        let contentSpacing: CGFloat = compact ? 4 : 6
+        let rowSpacing: CGFloat = compact ? 4 : 6
+        let horizontalPadding: CGFloat = compact ? 10 : DesignTokens.Spacing.sm
+        let verticalPadding: CGFloat = compact ? 8 : DesignTokens.Spacing.sm
+        return VStack(alignment: .leading, spacing: contentSpacing) {
+            HStack(spacing: rowSpacing) {
                 Image(systemName: systemImage)
+                    .font(compact ? .caption : .body)
                     .foregroundStyle(tint)
                 Text(title)
-                    .font(.caption)
+                    .font(compact ? .caption2 : .caption)
+                    .lineLimit(1)
                     .foregroundStyle(.secondary)
             }
             Text(value)
-                .font(.headline)
+                .font(compact ? .subheadline.weight(.semibold) : .headline)
                 .lineLimit(1)
+                .minimumScaleFactor(compact ? 0.72 : 0.9)
         }
-        .padding(.horizontal, DesignTokens.Spacing.sm)
-        .padding(.vertical, DesignTokens.Spacing.sm)
-        .frame(minWidth: 140, alignment: .leading)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, verticalPadding)
+        .frame(width: fixedWidth, alignment: .leading)
+        .frame(minWidth: compact ? 0 : 140, alignment: .leading)
         .background(lunarCardShape.fill(.ultraThinMaterial))
         .overlay(
             lunarCardShape
@@ -991,6 +1166,7 @@ struct ContentView: View {
         )
     }
 
+    // 预览区的键值信息块。
     private func previewMetaItem(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
@@ -1005,6 +1181,7 @@ struct ContentView: View {
         RoundedRectangle(cornerRadius: DesignTokens.Radius.card, style: .continuous)
     }
 
+    // 农历日期展示格式。
     private func formattedLunar(_ date: Date) -> String {
         guard let detail = lunarDetail(for: date) else {
             let fallback = DateFormatter()
@@ -1018,10 +1195,12 @@ struct ContentView: View {
         return "\(leapPrefix)\(detail.month)月\(detail.day)日"
     }
 
+    // 判断某个日期是否落在农历闰月。
     private func isLunarLeapMonth(_ date: Date) -> Bool {
         lunarDetail(for: date)?.isLeapMonth == true
     }
 
+    // 汇总预览区中出现的闰月信息，供用户确认规则影响。
     private var previewLeapMonthSummary: String? {
         var seen: Set<String> = []
         var ordered: [String] = []
@@ -1040,6 +1219,7 @@ struct ContentView: View {
         return ordered.joined(separator: "、")
     }
 
+    // 读取某日的农历月、日和闰月标记。
     private func lunarDetail(for date: Date) -> (month: Int, day: Int, isLeapMonth: Bool)? {
         var lunarCalendar = Calendar(identifier: .chinese)
         lunarCalendar.timeZone = .current
@@ -1048,6 +1228,7 @@ struct ContentView: View {
         return (month, day, comp.isLeapMonth ?? false)
     }
 
+    // 规则更新时间展示格式。
     private func formattedUpdatedAt(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
@@ -1065,6 +1246,7 @@ private enum FocusField: Hashable {
 
 private extension View {
     @ViewBuilder
+    // iOS 上按句首自动大写；macOS 保持原样。
     func lunarAutocapSentences() -> some View {
         #if os(iOS)
         self.textInputAutocapitalization(.sentences)
@@ -1074,6 +1256,7 @@ private extension View {
     }
 
     @ViewBuilder
+    // iOS 上按单词自动大写；macOS 保持原样。
     func lunarAutocapWords() -> some View {
         #if os(iOS)
         self.textInputAutocapitalization(.words)
@@ -1082,6 +1265,7 @@ private extension View {
         #endif
     }
 
+    // 通用卡片样式（毛玻璃底 + 细描边）。
     func lunarCard() -> some View {
         padding(DesignTokens.Spacing.sm)
             .background(
@@ -1094,6 +1278,7 @@ private extension View {
             )
     }
 
+    // 通用输入框样式。
     func lunarTextFieldStyle() -> some View {
         padding(.horizontal, DesignTokens.Spacing.sm)
             .padding(.vertical, 10)
@@ -1108,6 +1293,7 @@ private extension View {
     }
 }
 
+// 创建目标类型：系统日程或系统提醒。
 enum TargetType: String, CaseIterable, Identifiable, Codable {
     case event
     case reminder
@@ -1122,6 +1308,7 @@ enum TargetType: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// 农历重复方式：一次、按月、按年。
 enum LunarRepeatMode: String, CaseIterable, Identifiable, Codable {
     case none
     case monthly
@@ -1138,6 +1325,7 @@ enum LunarRepeatMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// 重复结束条件：按次数或按日期。
 enum RepeatEndMode: String, CaseIterable, Identifiable, Codable {
     case afterOccurrences
     case onDate
@@ -1152,6 +1340,7 @@ enum RepeatEndMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// 当目标农历日在某月不存在时的处理策略。
 enum MissingDayStrategy: String, CaseIterable, Identifiable, Codable {
     case skip
     case fallbackToMonthEnd
@@ -1166,6 +1355,7 @@ enum MissingDayStrategy: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// 农历规则定义（月、日、是否闰月）。
 struct LunarSpec: Codable {
     let month: Int
     let day: Int
@@ -1177,6 +1367,7 @@ struct LunarSpec: Codable {
     }
 }
 
+// 规则与系统条目的映射记录。
 struct StoredOccurrence: Codable, Identifiable {
     let occKey: String
     let calendarItemIdentifier: String
@@ -1184,6 +1375,7 @@ struct StoredOccurrence: Codable, Identifiable {
     var id: String { "\(occKey)-\(calendarItemIdentifier)" }
 }
 
+// 规则持久化模型。
 struct StoredRule: Codable, Identifiable {
     let id: String
     let title: String
@@ -1304,6 +1496,7 @@ final class RuleStore: ObservableObject {
     private let fileURL: URL
 
     init() {
+        // 规则文件固定保存在 Application Support/LunarSmart/rules.json。
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         let dir = base.appendingPathComponent("LunarSmart", isDirectory: true)
@@ -1312,10 +1505,12 @@ final class RuleStore: ObservableObject {
         load()
     }
 
+    // 按 ID 查询规则。
     func rule(by id: String) -> StoredRule? {
         rules.first(where: { $0.id == id })
     }
 
+    // 新增或更新规则。
     func upsert(_ rule: StoredRule) {
         if let index = rules.firstIndex(where: { $0.id == rule.id }) {
             rules[index] = rule
@@ -1325,11 +1520,13 @@ final class RuleStore: ObservableObject {
         save()
     }
 
+    // 删除规则。
     func delete(ruleID: String) {
         rules.removeAll { $0.id == ruleID }
         save()
     }
 
+    // 从磁盘加载规则。
     private func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
         let decoder = JSONDecoder()
@@ -1338,6 +1535,7 @@ final class RuleStore: ObservableObject {
         }
     }
 
+    // 将规则写入磁盘。
     private func save() {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -1346,6 +1544,7 @@ final class RuleStore: ObservableObject {
     }
 }
 
+// 同步到 EventKit 所需的输入参数。
 struct CreateRequest {
     let ruleId: String
     let title: String
@@ -1358,6 +1557,7 @@ struct CreateRequest {
     let reminderOffsetMinutes: Int
 }
 
+// 一次同步执行后的统计结果。
 struct SyncResult {
     let created: Int
     let updated: Int
@@ -1366,9 +1566,11 @@ struct SyncResult {
     let items: [StoredOccurrence]
 }
 
+// 调度层：负责组合农历引擎与重复结束策略。
 final class LunarScheduler {
     private let engine = LunarEngine()
 
+    // 生成预览用日期集合。
     func previewOccurrences(
         startGregorianYear: Int,
         spec: LunarSpec,
@@ -1379,6 +1581,7 @@ final class LunarScheduler {
         repeatEndCount: Int,
         repeatEndDate: Date
     ) throws -> [Date] {
+        // 预览需要更大的窗口，以便用户提前看到后续日期走势。
         let normalizedCount = max(1, repeatEndCount)
         let window = previewWindow(
             repeatMode: repeatMode,
@@ -1405,6 +1608,7 @@ final class LunarScheduler {
         )
     }
 
+    // 生成实际落库用日期集合。
     func creationOccurrences(
         startGregorianYear: Int,
         spec: LunarSpec,
@@ -1415,6 +1619,7 @@ final class LunarScheduler {
         repeatEndCount: Int,
         repeatEndDate: Date
     ) throws -> [Date] {
+        // 实际创建只生成必要条目，避免一次写入过多系统日历数据。
         let normalizedCount = max(1, repeatEndCount)
         let window = creationWindow(
             repeatMode: repeatMode,
@@ -1441,6 +1646,7 @@ final class LunarScheduler {
         )
     }
 
+    // 预览窗口策略（为了可视化会适当放大）。
     private func previewWindow(
         repeatMode: LunarRepeatMode,
         repeatEndMode: RepeatEndMode,
@@ -1458,6 +1664,7 @@ final class LunarScheduler {
         }
     }
 
+    // 创建窗口策略（只取必要范围）。
     private func creationWindow(
         repeatMode: LunarRepeatMode,
         repeatEndMode: RepeatEndMode,
@@ -1475,6 +1682,7 @@ final class LunarScheduler {
         }
     }
 
+    // 应用“按次数/按日期结束重复”的裁剪规则。
     private func applyRepeatEnding(
         dates: [Date],
         repeatMode: LunarRepeatMode,
@@ -1501,12 +1709,14 @@ final class LunarScheduler {
     }
 }
 
+// 一段连续农历月份的数据块。
 struct LunarMonthBlock {
     let lunarYear: Int
     let lunarMonth: Int
     let isLeapMonth: Bool
     let days: [Date]
 
+    // 在当前月块中取目标农历日，必要时可退到月末。
     func date(forDay day: Int, strategy: MissingDayStrategy) -> Date? {
         if day <= days.count {
             return days[day - 1]
@@ -1518,6 +1728,7 @@ struct LunarMonthBlock {
     }
 }
 
+// 农历计算引擎：负责从规则推导公历日期序列。
 final class LunarEngine {
     private var gregorian: Calendar = {
         var c = Calendar(identifier: .gregorian)
@@ -1531,6 +1742,7 @@ final class LunarEngine {
         return c
     }()
 
+    // 按重复模式生成候选日期。
     func occurrences(
         startGregorianYear: Int,
         spec: LunarSpec,
@@ -1590,6 +1802,7 @@ final class LunarEngine {
         }
     }
 
+    // 计算某公历年内首个匹配日期。
     private func firstOccurrenceInYear(
         startGregorianYear: Int,
         spec: LunarSpec,
@@ -1603,6 +1816,7 @@ final class LunarEngine {
         ).first
     }
 
+    // 计算某公历年内所有匹配日期（可选包含对应闰月）。
     private func occurrencesInYear(
         startGregorianYear: Int,
         spec: LunarSpec,
@@ -1634,6 +1848,7 @@ final class LunarEngine {
         return results
     }
 
+    // 以锚点日期向后逐月扩展日期序列。
     private func monthlyOccurrences(
         anchor: Date,
         targetDay: Int,
@@ -1675,6 +1890,7 @@ final class LunarEngine {
     }
 
     private func monthBlocks(from start: Date, to end: Date) -> [LunarMonthBlock] {
+        // 按“农历年-月-闰月标记”连续切块，方便按月定位目标农历日。
         var blocks: [LunarMonthBlock] = []
         var current = start
 
@@ -1722,6 +1938,7 @@ final class LunarEngine {
     }
 }
 
+// EventKit 适配层：负责权限、查找、增删改提交。
 final class EventKitAdapter {
     private let eventStore = EKEventStore()
 
@@ -1739,6 +1956,7 @@ final class EventKitAdapter {
         return f
     }()
 
+    // 同步一条规则到系统条目（创建/更新/删除）。
     func syncRule(
         request: CreateRequest,
         occurrences: [Date],
@@ -1827,6 +2045,7 @@ final class EventKitAdapter {
         )
     }
 
+    // 批量删除已有系统条目。
     func deleteItems(type: TargetType, items: [StoredOccurrence]) async throws -> Int {
         switch type {
         case .event:
@@ -1846,6 +2065,7 @@ final class EventKitAdapter {
         return deleted
     }
 
+    // 计算需要扫描系统条目的时间区间。
     private func makeDateRange(for occurrences: [Date]) -> (start: Date, end: Date) {
         let minDate = occurrences.min() ?? Date()
         let maxDate = occurrences.max() ?? minDate
@@ -1854,6 +2074,7 @@ final class EventKitAdapter {
         return (start, end)
     }
 
+    // 从系统条目中提取“发生键 -> 条目标识符”的映射。
     private func existingMarkerMap(type: TargetType, ruleId: String, start: Date, end: Date) async throws -> [String: String] {
         switch type {
         case .event:
@@ -1886,6 +2107,7 @@ final class EventKitAdapter {
         }
     }
 
+    // 异步拉取提醒事项列表。
     private func fetchReminders(predicate: NSPredicate) async -> [EKReminder] {
         await withCheckedContinuation { continuation in
             eventStore.fetchReminders(matching: predicate) { reminders in
@@ -1894,6 +2116,7 @@ final class EventKitAdapter {
         }
     }
 
+    // 创建一条系统日程或提醒。
     private func createItem(request: CreateRequest, date: Date, occKey: String) throws -> String {
         switch request.type {
         case .event:
@@ -1920,6 +2143,7 @@ final class EventKitAdapter {
         }
     }
 
+    // 更新已存在的系统日程或提醒。
     private func updateExistingItem(_ item: EKCalendarItem, request: CreateRequest, date: Date, occKey: String) throws -> String {
         switch request.type {
         case .event:
@@ -1940,6 +2164,7 @@ final class EventKitAdapter {
         }
     }
 
+    // 删除单条系统日程或提醒。
     private func deleteItem(item: EKCalendarItem, type: TargetType) throws {
         switch type {
         case .event:
@@ -1951,18 +2176,18 @@ final class EventKitAdapter {
         }
     }
 
+    // 将业务请求映射到 EKEvent 字段。
     private func apply(event: EKEvent, request: CreateRequest, date: Date) {
         event.title = request.title
         event.location = request.location
         event.notes = request.notes
-        // Keep Apple Calendar's "Add URL" field empty.
+        // 事件不写入 URL，避免污染 Apple Calendar 的“添加 URL”字段。
         event.url = nil
 
         if request.isAllDay {
             let bounds = allDayBounds(for: date)
             event.isAllDay = true
-            // For all-day events, keep timezone floating (nil) so Calendar treats
-            // the event as a date-only entry instead of a timed one.
+            // 全天事件使用浮动时区（nil），让系统按“日期条目”而非“具体时刻”处理。
             event.timeZone = nil
             event.startDate = bounds.start
             event.endDate = bounds.end
@@ -1980,6 +2205,7 @@ final class EventKitAdapter {
         }
     }
 
+    // 将业务请求映射到 EKReminder 字段。
     private func apply(reminder: EKReminder, request: CreateRequest, date: Date, occKey: String) {
         reminder.title = request.title
         reminder.notes = request.notes
@@ -1994,18 +2220,21 @@ final class EventKitAdapter {
         }
     }
 
+    // 把提醒偏移分钟转换为 EventKit 相对秒数。
     private func alarmRelativeOffset(for request: CreateRequest) -> TimeInterval? {
         guard request.reminderOffsetMinutes != 0 else { return nil }
-        // reminderOffsetMinutes stores "minutes before start". A negative value means
-        // "minutes after start", used by all-day Apple Calendar style options.
+        // reminderOffsetMinutes 记录“开始前多少分钟”；负数表示“开始后多少分钟”。
         return TimeInterval(-request.reminderOffsetMinutes * 60)
     }
 
+    // 发生日期键，格式 yyyy-MM-dd。
     private func occurrenceKey(for date: Date) -> String {
         occFormatter.string(from: date)
     }
 
+    // 生成写入系统条目的规则标记 URL。
     private func markerURL(ruleId: String, occKey: String) -> URL? {
+        // 用自定义 URL 回写规则 ID 和发生日期，后续同步可稳定定位已有条目。
         var comps = URLComponents()
         comps.scheme = "lunarsmart"
         comps.host = "rule"
@@ -2014,6 +2243,7 @@ final class EventKitAdapter {
         return comps.url
     }
 
+    // 从 URL 或兼容的 notes 标记中解析发生日期键。
     private func extractOccurrenceKey(url: URL?, notes: String?, expectedRuleId: String) -> String? {
         if let url,
            url.scheme == "lunarsmart",
@@ -2038,6 +2268,7 @@ final class EventKitAdapter {
         return String(afterPrefix[..<end])
     }
 
+    // 合并“日期部分 + 时间部分”为最终触发时间。
     private func mergedDate(dateOnly: Date, timeSource: Date, allDay: Bool) -> Date {
         let dateComponents = gregorian.dateComponents([.year, .month, .day], from: dateOnly)
         if allDay {
@@ -2054,6 +2285,7 @@ final class EventKitAdapter {
         return gregorian.date(from: merged) ?? dateOnly
     }
 
+    // 计算全天事项的起止边界。
     private func allDayBounds(for date: Date) -> (start: Date, end: Date) {
         var local = gregorian
         local.timeZone = .current
@@ -2062,12 +2294,12 @@ final class EventKitAdapter {
         day.minute = 0
         day.second = 0
         let start = local.date(from: day) ?? local.startOfDay(for: date)
-        // Keep same-day end for one-day all-day events to match Calendar.app's
-        // date-style editing behavior.
+        // 结束时间与开始时间同日，匹配 Calendar.app 对单日全天事项的编辑行为。
         let end = start
         return (start, end)
     }
 
+    // 请求系统日历权限。
     private func requestEventPermission() async throws {
         if #available(iOS 17.0, macOS 14.0, *) {
             let granted = try await eventStore.requestFullAccessToEvents()
@@ -2086,6 +2318,7 @@ final class EventKitAdapter {
         }
     }
 
+    // 请求系统提醒事项权限。
     private func requestReminderPermission() async throws {
         if #available(iOS 17.0, macOS 14.0, *) {
             let granted = try await eventStore.requestFullAccessToReminders()
@@ -2105,6 +2338,7 @@ final class EventKitAdapter {
     }
 }
 
+// 业务层统一错误类型。
 enum LunarError: LocalizedError {
     case invalidInput(String)
     case permissionDenied(String)
