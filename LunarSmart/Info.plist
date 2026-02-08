@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>用于将你设置的农历日程写入系统日历。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>用于将你设置的农历日程写入系统日历。</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>用于将你设置的农历提醒写入系统提醒事项。</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>用于将你设置的农历提醒写入系统提醒事项。</string>
+</dict>
+</plist>
