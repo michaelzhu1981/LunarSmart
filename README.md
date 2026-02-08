@@ -53,4 +53,4 @@ LunarSmart/
 
 ## License
 
-如需开源发布，请在此补充许可证（例如 MIT / Apache-2.0）。
+本项目采用 [MIT License](https://opensource.org/licenses/MIT) 开源许可。
