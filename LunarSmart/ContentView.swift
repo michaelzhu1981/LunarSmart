@@ -69,10 +69,15 @@ struct ContentView: View {
     @State private var previewDates: [Date] = []
     private let previewDisplayLimit = 20
     @State private var isSaving = false
+    @AppStorage("appLanguage") private var appLanguageRawValue = AppLanguage.simplified.rawValue
 
     private let scheduler = LunarScheduler()
     private let adapter = EventKitAdapter()
     @FocusState private var focusedField: FocusField?
+
+    private var appLanguage: AppLanguage {
+        AppLanguage(rawValue: appLanguageRawValue) ?? .simplified
+    }
 
     var body: some View {
         NavigationStack {
@@ -99,7 +104,8 @@ struct ContentView: View {
                 .scrollDismissesKeyboard(.interactively)
                 #endif
             }
-            .navigationTitle("LunarSmart 农历日程")
+            .environment(\.locale, appLanguage.locale)
+            .navigationTitle(localized("LunarSmart 农历日程"))
             .toolbar {
                 #if os(iOS)
                 ToolbarItemGroup(placement: .keyboard) {
@@ -109,19 +115,11 @@ struct ContentView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        refreshPreview()
-                    } label: {
-                        Label("刷新", systemImage: "arrow.clockwise")
-                    }
+                    languageToolbarMenu
                 }
                 #else
                 ToolbarItem(placement: .automatic) {
-                    Button {
-                        refreshPreview()
-                    } label: {
-                        Label("刷新", systemImage: "arrow.clockwise")
-                    }
+                    languageToolbarPickerMac
                 }
                 #endif
             }
@@ -207,7 +205,7 @@ struct ContentView: View {
                     )
                     overviewChip(
                         title: "目标",
-                        value: targetType.label,
+                        value: targetType.label(language: appLanguage),
                         systemImage: "target",
                         tint: .teal,
                         compact: true,
@@ -215,7 +213,7 @@ struct ContentView: View {
                     )
                     overviewChip(
                         title: "重复方式",
-                        value: repeatMode.label,
+                        value: repeatMode.label(language: appLanguage),
                         systemImage: "repeat",
                         tint: .orange,
                         compact: true,
@@ -236,13 +234,13 @@ struct ContentView: View {
                     )
                     overviewChip(
                         title: "目标",
-                        value: targetType.label,
+                        value: targetType.label(language: appLanguage),
                         systemImage: "target",
                         tint: .teal
                     )
                     overviewChip(
                         title: "重复方式",
-                        value: repeatMode.label,
+                        value: repeatMode.label(language: appLanguage),
                         systemImage: "repeat",
                         tint: .orange
                     )
@@ -284,7 +282,7 @@ struct ContentView: View {
 
                 Picker("创建类型", selection: $targetType) {
                     ForEach(TargetType.allCases) { kind in
-                        Text(kind.label).tag(kind)
+                        Text(kind.label(language: appLanguage)).tag(kind)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -312,6 +310,40 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var languageToolbarMenu: some View {
+        Menu {
+            Picker("", selection: $appLanguageRawValue) {
+                ForEach(AppLanguage.allCases) { language in
+                    Text(language.label).tag(language.rawValue)
+                }
+            }
+        } label: {
+            Text(appLanguage.shortLabel)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.secondary.opacity(0.12))
+                )
+        }
+        .accessibilityLabel("语言")
+    }
+
+    #if os(macOS)
+    private var languageToolbarPickerMac: some View {
+        Picker("", selection: $appLanguageRawValue) {
+            ForEach(AppLanguage.allCases) { language in
+                Text(language.label).tag(language.rawValue)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .frame(width: 110)
+        .accessibilityLabel("语言")
+    }
+    #endif
+
     private var lunarSettingsCard: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             Text("农历规则")
@@ -320,7 +352,7 @@ struct ContentView: View {
 
             Picker("重复", selection: $repeatMode) {
                 ForEach(LunarRepeatMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
+                    Text(mode.label(language: appLanguage)).tag(mode)
                 }
             }
             .pickerStyle(.menu)
@@ -356,7 +388,7 @@ struct ContentView: View {
                 HStack(alignment: .center, spacing: DesignTokens.Spacing.sm) {
                     Picker("结束重复", selection: $repeatEndMode) {
                         ForEach(RepeatEndMode.allCases) { mode in
-                            Text(mode.label).tag(mode)
+                            Text(mode.label(language: appLanguage)).tag(mode)
                         }
                     }
                     .pickerStyle(.menu)
@@ -392,7 +424,7 @@ struct ContentView: View {
 
             Picker("当月无该日时", selection: $missingDayStrategy) {
                 ForEach(MissingDayStrategy.allCases) { policy in
-                    Text(policy.label).tag(policy)
+                    Text(policy.label(language: appLanguage)).tag(policy)
                 }
             }
             .pickerStyle(.menu)
@@ -548,7 +580,7 @@ struct ContentView: View {
                     .font(.body.weight(.semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(rule.type.label)
+                Text(rule.type.label(language: appLanguage))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -556,7 +588,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(rule.repeatMode.label) · \(rule.spec.displayText)")
+                Text("\(rule.repeatMode.label(language: appLanguage)) · \(rule.spec.displayText(language: appLanguage))")
                     .font(.caption)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -624,9 +656,9 @@ struct ContentView: View {
     private func savedRuleRow(_ rule: StoredRule, isStriped: Bool) -> some View {
         HStack(spacing: 10) {
             tableDataCell(rule.title, width: 140, alignment: .leading, emphasized: true)
-            tableDataCell(rule.type.label, width: 70, alignment: .leading)
-            tableDataCell(rule.repeatMode.label, width: 80, alignment: .leading)
-            tableDataCell(rule.spec.displayText, width: 100, alignment: .leading)
+            tableDataCell(rule.type.label(language: appLanguage), width: 70, alignment: .leading)
+            tableDataCell(rule.repeatMode.label(language: appLanguage), width: 80, alignment: .leading)
+            tableDataCell(rule.spec.displayText(language: appLanguage), width: 100, alignment: .leading)
             tableDataCell("\(rule.occurrences.count)", width: 80, alignment: .trailing, monospacedDigits: true)
             tableDataCell(formattedUpdatedAt(rule.updatedAt), width: 110, alignment: .leading, monospacedDigits: true)
 
@@ -659,7 +691,7 @@ struct ContentView: View {
 
     // 表头单元格样式。
     private func tableHeaderCell(_ text: String, width: CGFloat, alignment: Alignment) -> some View {
-        Text(text)
+        Text(localized(text))
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .frame(width: width, alignment: alignment)
@@ -675,7 +707,7 @@ struct ContentView: View {
         monospacedDigits: Bool = false
     ) -> some View {
         if monospacedDigits {
-            Text(text)
+            Text(localized(text))
                 .font(emphasized ? .body.weight(.semibold) : .caption)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -683,7 +715,7 @@ struct ContentView: View {
                 .monospacedDigit()
                 .frame(width: width, alignment: alignment)
         } else {
-            Text(text)
+            Text(localized(text))
                 .font(emphasized ? .body.weight(.semibold) : .caption)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -697,8 +729,8 @@ struct ContentView: View {
             sectionTitle("预览")
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
                 HStack(spacing: DesignTokens.Spacing.md) {
-                    previewMetaItem(title: "规则", value: repeatMode.label)
-                    previewMetaItem(title: "目标", value: targetType.label)
+                    previewMetaItem(title: "规则", value: repeatMode.label(language: appLanguage))
+                    previewMetaItem(title: "目标", value: targetType.label(language: appLanguage))
                     previewMetaItem(title: "结果", value: "\(previewDates.count) 条")
                 }
                 .font(.caption)
@@ -1115,6 +1147,7 @@ struct ContentView: View {
     private func formattedSolar(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = appLanguage.locale
         formatter.dateStyle = .medium
         formatter.timeZone = .current
         return formatter.string(from: date)
@@ -1122,7 +1155,7 @@ struct ContentView: View {
 
     // 统一 section 标题样式。
     private func sectionTitle(_ text: String) -> some View {
-        Text(text)
+        Text(localized(text))
             .font(.headline.weight(.semibold))
             .foregroundStyle(.primary)
     }
@@ -1145,12 +1178,12 @@ struct ContentView: View {
                 Image(systemName: systemImage)
                     .font(compact ? .caption : .body)
                     .foregroundStyle(tint)
-                Text(title)
+                Text(localized(title))
                     .font(compact ? .caption2 : .caption)
                     .lineLimit(1)
                     .foregroundStyle(.secondary)
             }
-            Text(value)
+            Text(localized(value))
                 .font(compact ? .subheadline.weight(.semibold) : .headline)
                 .lineLimit(1)
                 .minimumScaleFactor(compact ? 0.72 : 0.9)
@@ -1169,12 +1202,18 @@ struct ContentView: View {
     // 预览区的键值信息块。
     private func previewMetaItem(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
+            Text(localized(title))
                 .foregroundStyle(.secondary)
-            Text(value)
+            Text(localized(value))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
         }
+    }
+
+    // 简繁切换：简体保持原文，繁体使用系统转换。
+    private func localized(_ simplified: String) -> String {
+        guard appLanguage == .traditional else { return simplified }
+        return simplified.applyingTransform(StringTransform("Hans-Hant"), reverse: false) ?? simplified
     }
 
     private var lunarCardShape: RoundedRectangle {
@@ -1186,12 +1225,12 @@ struct ContentView: View {
         guard let detail = lunarDetail(for: date) else {
             let fallback = DateFormatter()
             fallback.calendar = Calendar(identifier: .chinese)
-            fallback.locale = Locale(identifier: "zh_CN")
+            fallback.locale = appLanguage.locale
             fallback.timeZone = .current
             fallback.dateFormat = "r年M月d日"
             return fallback.string(from: date)
         }
-        let leapPrefix = detail.isLeapMonth ? "闰" : ""
+        let leapPrefix = detail.isLeapMonth ? (appLanguage == .traditional ? "閏" : "闰") : ""
         return "\(leapPrefix)\(detail.month)月\(detail.day)日"
     }
 
@@ -1231,6 +1270,7 @@ struct ContentView: View {
     // 规则更新时间展示格式。
     private func formattedUpdatedAt(_ date: Date) -> String {
         let formatter = DateFormatter()
+        formatter.locale = appLanguage.locale
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         formatter.timeZone = .current
@@ -1242,6 +1282,40 @@ private enum FocusField: Hashable {
     case title
     case notes
     case location
+}
+
+enum AppLanguage: String, CaseIterable, Identifiable {
+    case simplified
+    case traditional
+
+    var id: String { rawValue }
+
+    var shortLabel: String {
+        switch self {
+        case .simplified:
+            return "简"
+        case .traditional:
+            return "繁"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .simplified:
+            return "简体中文"
+        case .traditional:
+            return "繁體中文"
+        }
+    }
+
+    var locale: Locale {
+        switch self {
+        case .simplified:
+            return Locale(identifier: "zh_Hans")
+        case .traditional:
+            return Locale(identifier: "zh_Hant")
+        }
+    }
 }
 
 private extension View {
@@ -1300,10 +1374,14 @@ enum TargetType: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
-    var label: String {
-        switch self {
-        case .event: return "日程"
-        case .reminder: return "提醒"
+    var label: String { label(language: .simplified) }
+
+    func label(language: AppLanguage) -> String {
+        switch (self, language) {
+        case (.event, .simplified): return "日程"
+        case (.event, .traditional): return "日程"
+        case (.reminder, .simplified): return "提醒"
+        case (.reminder, .traditional): return "提醒事項"
         }
     }
 }
@@ -1316,11 +1394,16 @@ enum LunarRepeatMode: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
-    var label: String {
-        switch self {
-        case .none: return "不重复"
-        case .monthly: return "按农历月"
-        case .yearly: return "按农历年"
+    var label: String { label(language: .simplified) }
+
+    func label(language: AppLanguage) -> String {
+        switch (self, language) {
+        case (.none, .simplified): return "不重复"
+        case (.none, .traditional): return "不重複"
+        case (.monthly, .simplified): return "按农历月"
+        case (.monthly, .traditional): return "按農曆月"
+        case (.yearly, .simplified): return "按农历年"
+        case (.yearly, .traditional): return "按農曆年"
         }
     }
 }
@@ -1332,10 +1415,14 @@ enum RepeatEndMode: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
-    var label: String {
-        switch self {
-        case .afterOccurrences: return "于"
-        case .onDate: return "于日期"
+    var label: String { label(language: .simplified) }
+
+    func label(language: AppLanguage) -> String {
+        switch (self, language) {
+        case (.afterOccurrences, .simplified): return "于"
+        case (.afterOccurrences, .traditional): return "於"
+        case (.onDate, .simplified): return "于日期"
+        case (.onDate, .traditional): return "於日期"
         }
     }
 }
@@ -1347,10 +1434,14 @@ enum MissingDayStrategy: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
-    var label: String {
-        switch self {
-        case .skip: return "跳过该月"
-        case .fallbackToMonthEnd: return "顺延到当月最后一天"
+    var label: String { label(language: .simplified) }
+
+    func label(language: AppLanguage) -> String {
+        switch (self, language) {
+        case (.skip, .simplified): return "跳过该月"
+        case (.skip, .traditional): return "跳過該月"
+        case (.fallbackToMonthEnd, .simplified): return "顺延到当月最后一天"
+        case (.fallbackToMonthEnd, .traditional): return "順延到當月最後一天"
         }
     }
 }
@@ -1361,8 +1452,8 @@ struct LunarSpec: Codable {
     let day: Int
     let isLeapMonth: Bool
 
-    var displayText: String {
-        let leapText = isLeapMonth ? "闰" : ""
+    func displayText(language: AppLanguage = .simplified) -> String {
+        let leapText = isLeapMonth ? (language == .traditional ? "閏" : "闰") : ""
         return "农历\(leapText)\(month)月\(day)日"
     }
 }
