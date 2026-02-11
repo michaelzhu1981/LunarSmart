@@ -107,10 +107,10 @@ struct ContentView: View {
             #endif
         }
         .onAppear { refreshPreviewFromCurrentInputs() }
-        .onChange(of: previewRefreshFingerprint) { _ in
+        .onChange(of: previewRefreshFingerprint) {
             refreshPreviewFromCurrentInputs()
         }
-        .onChange(of: isAllDay) { newValue in
+        .onChange(of: isAllDay) { _, newValue in
             if newValue {
                 if !Self.appleCalendarAllDayReminderOffsets.contains(reminderOffsetMinutes) {
                     reminderOffsetMinutes = 900
