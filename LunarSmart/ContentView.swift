@@ -80,89 +80,94 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                appleBackground
-                    .ignoresSafeArea()
+        screenRoot
+    }
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-                        overviewSection
-                        basicSection
-                        settingsCardsSection
-                        previewSection
-                        savedRulesSection
-                        saveActionSection
-                        resultSection
-                    }
-                    .padding(.horizontal, DesignTokens.Spacing.md)
-                    .padding(.vertical, DesignTokens.Spacing.lg)
-                    .frame(maxWidth: 1024)
-                    .frame(maxWidth: .infinity, alignment: .top)
-                }
-                #if os(iOS)
-                .scrollDismissesKeyboard(.interactively)
-                #endif
-            }
-            .environment(\.locale, appLanguage.locale)
-            .navigationTitle(localized("LunarSmart 农历日程"))
-            .toolbar {
-                #if os(iOS)
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("完成") {
-                        focusedField = nil
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    languageToolbarMenu
-                }
-                #else
-                ToolbarItem(placement: .automatic) {
-                    languageToolbarPickerMac
-                }
-                #endif
-            }
-            .onAppear {
-                enforceLeapSelectionConsistency()
-                enforceRepeatEndConsistency()
-                refreshPreview()
-            }
-            .onChange(of: gregorianYear) { _, _ in
-                enforceRepeatEndConsistency()
-                refreshPreview()
-            }
-            .onChange(of: lunarMonth) { _, _ in refreshPreview() }
-            .onChange(of: lunarDay) { _, _ in refreshPreview() }
-            .onChange(of: isLeapMonth) { _, _ in refreshPreview() }
-            .onChange(of: repeatMode) { _, _ in
-                enforceLeapSelectionConsistency()
-                enforceRepeatEndConsistency()
-                refreshPreview()
-            }
-            .onChange(of: includeLeapMonthsForMonthlyRepeat) { _, _ in
-                enforceLeapSelectionConsistency()
-                refreshPreview()
-            }
-            .onChange(of: missingDayStrategy) { _, _ in refreshPreview() }
-            .onChange(of: repeatEndMode) { _, _ in refreshPreview() }
-            .onChange(of: repeatEndCount) { _, newValue in
-                if newValue < 1 {
-                    repeatEndCount = 1
-                    return
-                }
-                refreshPreview()
-            }
-            .onChange(of: repeatEndDate) { _, _ in refreshPreview() }
-            .onChange(of: isAllDay) { _, newValue in
-                if newValue {
-                    if !Self.appleCalendarAllDayReminderOffsets.contains(reminderOffsetMinutes) {
-                        reminderOffsetMinutes = 900
-                    }
-                } else if !Self.appleCalendarReminderOffsets.contains(reminderOffsetMinutes) {
-                    reminderOffsetMinutes = 0
+    private var screenRoot: some View {
+        NavigationStack {
+            mainScrollContent
+        }
+        .environment(\.locale, appLanguage.locale)
+        .navigationTitle(localized("LunarSmart 农历日程"))
+        .toolbar {
+            #if os(iOS)
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") {
+                    focusedField = nil
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                languageToolbarMenu
+            }
+            #else
+            ToolbarItem(placement: .automatic) {
+                languageToolbarPickerMac
+            }
+            #endif
+        }
+        .onAppear { refreshPreviewFromCurrentInputs() }
+        .onChange(of: previewRefreshFingerprint) { _ in
+            refreshPreviewFromCurrentInputs()
+        }
+        .onChange(of: isAllDay) { newValue in
+            if newValue {
+                if !Self.appleCalendarAllDayReminderOffsets.contains(reminderOffsetMinutes) {
+                    reminderOffsetMinutes = 900
+                }
+            } else if !Self.appleCalendarReminderOffsets.contains(reminderOffsetMinutes) {
+                reminderOffsetMinutes = 0
+            }
+        }
+    }
+
+    private var previewRefreshFingerprint: String {
+        [
+            "\(gregorianYear)",
+            "\(lunarMonth)",
+            "\(lunarDay)",
+            "\(isLeapMonth)",
+            "\(repeatMode.rawValue)",
+            "\(includeLeapMonthsForMonthlyRepeat)",
+            "\(missingDayStrategy.rawValue)",
+            "\(repeatEndMode.rawValue)",
+            "\(repeatEndCount)",
+            "\(repeatEndDate.timeIntervalSinceReferenceDate)"
+        ].joined(separator: "|")
+    }
+
+    private func refreshPreviewFromCurrentInputs() {
+        enforceLeapSelectionConsistency()
+        enforceRepeatEndConsistency()
+        if repeatEndCount < 1 {
+            repeatEndCount = 1
+        }
+        refreshPreview()
+    }
+
+    private var mainScrollContent: some View {
+        ZStack {
+            appleBackground
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                    overviewSection
+                    basicSection
+                    settingsCardsSection
+                    previewSection
+                    savedRulesSection
+                    saveActionSection
+                    resultSection
+                }
+                .padding(.horizontal, DesignTokens.Spacing.md)
+                .padding(.vertical, DesignTokens.Spacing.lg)
+                .frame(maxWidth: 1024)
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            #if os(iOS)
+            .scrollDismissesKeyboard(.interactively)
+            #endif
         }
     }
 
@@ -743,11 +748,7 @@ struct ContentView: View {
 
                 ScrollView {
                     if previewDates.isEmpty {
-                        ContentUnavailableView(
-                            "暂无预览结果",
-                            systemImage: "calendar.badge.exclamationmark",
-                            description: Text("点击“刷新预览”查看将要创建的日期。")
-                        )
+                        previewEmptyState
                         .frame(maxWidth: .infinity, minHeight: 150)
                         .foregroundStyle(.secondary)
                     } else {
@@ -816,6 +817,29 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .lunarCard()
+        }
+    }
+
+    @ViewBuilder
+    private var previewEmptyState: some View {
+        if #available(iOS 17.0, macOS 14.0, *) {
+            ContentUnavailableView(
+                "暂无预览结果",
+                systemImage: "calendar.badge.exclamationmark",
+                description: Text("点击“刷新预览”查看将要创建的日期。")
+            )
+        } else {
+            VStack(spacing: DesignTokens.Spacing.xs) {
+                Image(systemName: "calendar.badge.exclamationmark")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                Text("暂无预览结果")
+                    .font(.headline)
+                Text("点击“刷新预览”查看将要创建的日期。")
+                    .font(.subheadline)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, DesignTokens.Spacing.md)
         }
     }
 
@@ -1262,9 +1286,18 @@ struct ContentView: View {
     private func lunarDetail(for date: Date) -> (month: Int, day: Int, isLeapMonth: Bool)? {
         var lunarCalendar = Calendar(identifier: .chinese)
         lunarCalendar.timeZone = .current
-        let comp = lunarCalendar.dateComponents([.month, .day, .isLeapMonth], from: date)
+        let comp = lunarCalendar.dateComponents([.month, .day], from: date)
         guard let month = comp.month, let day = comp.day else { return nil }
-        return (month, day, comp.isLeapMonth ?? false)
+        return (month, day, lunarMonthName(for: date).contains("闰") || lunarMonthName(for: date).contains("閏"))
+    }
+
+    private func lunarMonthName(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .chinese)
+        formatter.locale = Locale(identifier: "zh_Hans_CN")
+        formatter.timeZone = .current
+        formatter.dateFormat = "MMMM"
+        return formatter.string(from: date)
     }
 
     // 规则更新时间展示格式。
@@ -1833,6 +1866,21 @@ final class LunarEngine {
         return c
     }()
 
+    private func lunarComponents(from date: Date) -> (year: Int, month: Int, isLeapMonth: Bool) {
+        let comp = lunar.dateComponents([.year, .month], from: date)
+        let monthText = lunarMonthName(for: date)
+        return (comp.year ?? 0, comp.month ?? 0, monthText.contains("闰") || monthText.contains("閏"))
+    }
+
+    private func lunarMonthName(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = lunar
+        formatter.locale = Locale(identifier: "zh_Hans_CN")
+        formatter.timeZone = .current
+        formatter.dateFormat = "MMMM"
+        return formatter.string(from: date)
+    }
+
     // 按重复模式生成候选日期。
     func occurrences(
         startGregorianYear: Int,
@@ -1919,9 +1967,14 @@ final class LunarEngine {
         else {
             throw LunarError.invalidInput("年份无效。")
         }
+        guard let scanStart = gregorian.date(byAdding: .day, value: -40, to: yearStart),
+              let scanEnd = gregorian.date(byAdding: .day, value: 40, to: yearEnd)
+        else {
+            throw LunarError.invalidInput("日期计算失败。")
+        }
 
         let shouldIncludeLeapCompanion = includeLeapMonthCompanion && !spec.isLeapMonth
-        let blocks = monthBlocks(from: yearStart, to: yearEnd)
+        let blocks = monthBlocks(from: scanStart, to: scanEnd)
             .filter {
                 guard $0.lunarMonth == spec.month else { return false }
                 if shouldIncludeLeapCompanion {
@@ -1932,7 +1985,8 @@ final class LunarEngine {
 
         var results: [Date] = []
         for block in blocks {
-            if let date = block.date(forDay: spec.day, strategy: missingDayStrategy) {
+            if let date = block.date(forDay: spec.day, strategy: missingDayStrategy),
+               (yearStart...yearEnd).contains(date) {
                 results.append(date)
             }
         }
@@ -1955,10 +2009,10 @@ final class LunarEngine {
             return dates
         }
 
-        let anchorComp = lunar.dateComponents([.year, .month, .isLeapMonth], from: anchor)
-        let anchorYear = anchorComp.year ?? 0
-        let anchorMonth = anchorComp.month ?? 0
-        let anchorLeap = anchorComp.isLeapMonth ?? false
+        let anchorComp = lunarComponents(from: anchor)
+        let anchorYear = anchorComp.year
+        let anchorMonth = anchorComp.month
+        let anchorLeap = anchorComp.isLeapMonth
 
         for block in monthBlocks(from: anchor, to: end) {
             if block.lunarYear == anchorYear &&
@@ -1992,10 +2046,10 @@ final class LunarEngine {
         var currentLeap = false
 
         while current <= end {
-            let comp = lunar.dateComponents([.year, .month, .isLeapMonth], from: current)
-            let lYear = comp.year ?? 0
-            let lMonth = comp.month ?? 0
-            let leap = comp.isLeapMonth ?? false
+            let comp = lunarComponents(from: current)
+            let lYear = comp.year
+            let lMonth = comp.month
+            let leap = comp.isLeapMonth
             let key = "\(lYear)-\(lMonth)-\(leap)"
 
             if currentKey == nil {

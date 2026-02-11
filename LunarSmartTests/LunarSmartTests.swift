@@ -137,4 +137,24 @@ struct LunarSmartTests {
 
         #expect(preview.count == 3)
     }
+
+    @Test
+    func crossYearMonthDoesNotShiftTargetLunarDay() throws {
+        let engine = LunarEngine()
+        let dates = try engine.occurrences(
+            startGregorianYear: 2023,
+            spec: LunarSpec(month: 12, day: 11, isLeapMonth: false),
+            repeatMode: .none,
+            missingDayStrategy: .skip,
+            includeLeapMonthsForMonthlyRepeat: false,
+            monthlyWindowCount: 1,
+            yearlyWindowCount: 1
+        )
+
+        let first = try #require(dates.first)
+        let comp = lunarComponents(for: first)
+        #expect(comp.month == 12)
+        #expect(comp.day == 11)
+        #expect(comp.isLeapMonth == false)
+    }
 }
